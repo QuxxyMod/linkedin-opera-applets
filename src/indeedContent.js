@@ -9,8 +9,8 @@
   let appliedIds = new Set();
 
   // Shared with content.js's LinkedIn side — one "hide already-applied
-  // jobs" toggle in the popup covers both sites.
-  let settings = { hideApplied: false };
+  // jobs" toggle (and one CV-picker toggle) in the popup covers both sites.
+  let settings = { hideApplied: false, cvPickerEnabled: true };
 
   function extractJobId() {
     const params = new URLSearchParams(location.search);
@@ -98,6 +98,7 @@
   // "Mark as Applied" button so you can tag which CV you're sending before
   // clicking it.
   function ensureCvPicker(container, btn, jobId) {
+    if (!settings.cvPickerEnabled) return;
     let picker = container.querySelector('.lext-cv-picker');
     if (!picker) {
       picker = document.createElement('select');
@@ -243,9 +244,10 @@
     scanDebounce = setTimeout(scanAll, 500);
   }
 
-  chrome.storage.local.get({ [STORAGE_KEY]: [], hideApplied: false }, (res) => {
+  chrome.storage.local.get({ [STORAGE_KEY]: [], hideApplied: false, cvPickerEnabled: true }, (res) => {
     appliedIds = new Set(res[STORAGE_KEY]);
     settings.hideApplied = res.hideApplied;
+    settings.cvPickerEnabled = res.cvPickerEnabled;
     scanAll();
   });
 
@@ -257,8 +259,16 @@
   setInterval(scanAll, 8000);
 
   chrome.storage.onChanged.addListener((changes, area) => {
-    if (area !== 'local' || !changes.hideApplied) return;
-    settings.hideApplied = changes.hideApplied.newValue;
-    reapplyVisibility();
+    if (area !== 'local') return;
+    if (changes.hideApplied) {
+      settings.hideApplied = changes.hideApplied.newValue;
+      reapplyVisibility();
+    }
+    if (changes.cvPickerEnabled) {
+      settings.cvPickerEnabled = changes.cvPickerEnabled.newValue;
+      if (!settings.cvPickerEnabled) {
+        document.querySelectorAll('.lext-cv-picker').forEach((el) => el.remove());
+      }
+    }
   });
 })();

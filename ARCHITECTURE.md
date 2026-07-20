@@ -42,6 +42,16 @@ Two extra sheets are maintained the same way, found by name (not a hardcoded she
 
 The port can be changed if `17845` is taken by something else - update `PORT` in `server/save-server.js` and `LOCAL_SERVER_BASE` in `src/background.js` to match.
 
+## Recording applications on other job sites
+
+`src/genericContent.js` runs on every page that isn't LinkedIn or Indeed. There's no per-site teaching step and nothing about *how to find elements* is ever persisted — each application is recorded on the spot:
+
+1. A floating button (`showRecordButton` setting, default on) starts the flow.
+2. Left-click the job title on the page, then left-click the company name - each click is captured (`preventDefault`/`stopPropagation`) so it doesn't navigate away, and the picked element's own text is used verbatim. `titleUrl` is always `location.href` (the page you're recording *from*, not a link inside the picked element).
+3. If `cvPickerEnabled` is on, a CV dropdown appears (same `cvList` cache as the LinkedIn/Indeed pickers); a "Save" click sends the same `JOB_SEEN` message shape every other site sends, with `source` set to the hostname's registrable label (`siteKeyFromHostname()` - same idea as identifying "LinkedIn"/"Indeed" by name).
+
+Hiding/badging an already-applied job again on a later visit to a list page has no taught selector to re-find it by either, so it falls back to a plain text match: every recorded `{ source, title, company }` (capped at 500, `recordedJobs` in storage) is looked up against a one-time index of small "leaf" elements' own text built fresh on each scan (`buildTextIndex()` in `src/genericContent.js`) - if a title text matches and the same card (found via the same repeating-sibling `findCardRoot()` heuristic as before) also contains the recorded company text, that card gets hidden/badged. This trades some precision (a generic exact-text match instead of a taught selector) for never breaking when a site redesigns.
+
 ## Adding another job site
 
 The server is already site-agnostic - `/append`, `/missing-links`, and `/backfill-link` just take whatever `source` string a message carries and never hardcode "LinkedIn" or "Indeed". Supporting a new site means:
@@ -58,11 +68,11 @@ src/content.js                 - scans LinkedIn pages, hides/shows job cards, CV
 src/content.css                - CSS: hiding, badges, hide-company button, CV picker
 src/indeedContent.js           - Indeed: "Mark as Applied" button, AA badge, hide toggle, CV picker
 src/indeedContent.css          - styling for the Indeed button/badge/CV picker
-src/genericContent.js          - any other job site: "Learn mode" element picker + Applied button
-src/genericContent.css         - styling for the Learn-mode picker UI
+src/genericContent.js          - any other job site: floating "Record application" button + pick flow
+src/genericContent.css         - styling for the floating button/toolbar/hover highlight
 src/background.js              - service worker: counters, storage, talks to the local server
 src/zip.js                     - minimal ZIP writer (no third-party dependencies)
-src/popup.html/.js/.css        - popup: toggles, counters, "Open spreadsheet", "Learn <site>"
+src/popup.html/.js/.css        - popup: toggles, counters, "Open spreadsheet"
 server/save-server.js          - local companion process: appends/patches the tracker workbook (cross-platform)
 server/tracker-template.xlsx   - blank workbook (no personal data) used to bootstrap a fresh tracker file
 server/start-server.bat        - double-click launcher for the server (Windows)

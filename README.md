@@ -8,8 +8,8 @@ A browser extension (Opera, Chrome, Edge, Brave, or any other Chromium-based bro
 - Can also hide jobs by workplace type - **Remote**, **Hybrid**, **On-site** (LinkedIn only).
 - Adds a small **"AA"** (Already Applied) badge before the title of any job already marked Applied, so it stands out even with hiding turned off.
 - On Indeed - which has no built-in "applied" tracking - adds a **"Mark as Applied"** button, plus the same "AA" badge once a job is marked.
-- On LinkedIn and Indeed, a **CV picker** appears near the Apply/Mark-as-Applied button - pick which CV you're sending before applying, and it's recorded into the "Версия CV" column alongside that application. The list comes from the "List CVs" sheet in the workbook - add a row there for each CV you want to choose from.
-- **Any other job site**: right-click a job title/company/work-model once each to teach the extension that site's layout ("Learn mode"); after that it injects its own "Applied" button and hides/shows jobs there too.
+- On LinkedIn and Indeed, a **CV picker** appears near the Apply/Mark-as-Applied button - pick which CV you're sending before applying, and it's recorded into the "Версия CV" column alongside that application. The list comes from the "List CVs" sheet in the workbook - add a row there for each CV you want to choose from. Turn this off in the popup ("Record which CV was sent") if you don't want to bother with it.
+- **Any other job site**: a floating **"Record application"** button (togglable in the popup) - click it, then click the job title and the company name on the page, pick a CV if you want, and it's recorded. No setup, nothing taught in advance - and it still hides/badges that job if you see it again in a list later.
 - **Hide by company**: a small eye icon next to each job lets you hide every listing from a company you're not interested in (toggle in the popup to show/hide them).
 - Counts how many jobs were marked Applied/Viewed **today** and shows the counters in the popup.
 - Logs every application straight into one Excel workbook (see below) - no downloads, no popups from the browser.

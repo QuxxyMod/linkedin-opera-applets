@@ -10,6 +10,7 @@
     hideOnsite: false,
     hideUninterestedCompanies: false,
     hiddenCompanies: [],
+    cvPickerEnabled: true,
   };
   const WORKPLACE_TYPES = ['Remote', 'Hybrid', 'On-site'];
 
@@ -654,6 +655,7 @@
   // "List CVs" sheet every couple minutes), so this is safe to call on
   // every scan — it no-ops once already populated for the current job.
   function ensureCvPicker(applyButton, jobId) {
+    if (!settings.cvPickerEnabled) return;
     // The Apply button's own wrapper div is sized to fit just that one
     // pill-shaped button (fixed height) — a block element dropped inside
     // it gets silently clipped out of view instead of pushing the wrapper
@@ -834,6 +836,7 @@
     'hideOnsite',
     'hideUninterestedCompanies',
     'hiddenCompanies',
+    'cvPickerEnabled',
   ];
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== 'local') return;
@@ -845,5 +848,8 @@
       }
     }
     if (relevant) reapplyVisibility();
+    if (changes.cvPickerEnabled && !changes.cvPickerEnabled.newValue) {
+      document.querySelectorAll('.lext-cv-picker').forEach((el) => el.remove());
+    }
   });
 })();

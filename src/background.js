@@ -296,4 +296,8 @@ chrome.runtime.onInstalled.addListener(async () => {
   // full-rebuild writes, so there's nothing to carry forward — keeping it
   // around would just burn storage quota for no reason.
   await chrome.storage.local.remove('appliedRecords');
+  // Migrating off the old per-site "Learn mode" (taught title/company/work-
+  // model selectors) now that generic sites use the record-on-the-spot
+  // picker instead — nothing in this key is read anymore.
+  await chrome.storage.local.remove('learnedSites');
 });
