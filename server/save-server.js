@@ -155,6 +155,80 @@ function inlineStrCell(ref, text, styleIndex) {
   return `<c r="${ref}" t="inlineStr"${s}>${t}</c>`;
 }
 
+function numberCell(ref, value, styleIndex) {
+  const s = styleIndex ? ` s="${styleIndex}"` : '';
+  return `<c r="${ref}"${s}><v>${value}</v></c>`;
+}
+
+// Excel dates are day counts since 1899-12-30 (the standard spreadsheet
+// 1900-leap-year-bug offset). UTC throughout so "15.07.2026" round-trips
+// to the same calendar day regardless of the machine's local timezone.
+function dateToExcelSerial(y, m, d) {
+  return Math.round(Date.UTC(y, m - 1, d) / 86400000) + 25569;
+}
+
+function parseDisplayDateToSerial(text) {
+  let m = /^(\d{2})\.(\d{2})\.(\d{4})$/.exec(text); // dd.MM.yyyy — what the extension writes
+  if (m) return dateToExcelSerial(+m[3], +m[2], +m[1]);
+  m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text); // yyyy-MM-dd — leftover from the pre-conversion history
+  if (m) return dateToExcelSerial(+m[1], +m[2], +m[3]);
+  return null;
+}
+
+function excelSerialToDisplayDate(serial) {
+  const d = new Date((serial - 25569) * 86400000);
+  const dd = String(d.getUTCDate()).padStart(2, '0');
+  const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
+  return `${dd}.${mm}.${d.getUTCFullYear()}`;
+}
+
+// Finds (or adds) a cellXf that displays a numeric cell as "dd.mm.yyyy" —
+// used for the Date column so COUNTIFS/date-range formulas (the monthly
+// counts table, and anything charted off it) actually work; text dates
+// can't be compared or bucketed. Never assumes a fixed index — the bundled
+// template's styles.xml and a hand-edited real workbook's already diverge
+// after Excel/LibreOffice resaves reshuffle cellXfs.
+function ensureDateStyle(stylesXml) {
+  return ensureCustomNumFmtStyle(stylesXml, 'dd.mm.yyyy');
+}
+
+// Same idea, parameterized — also used for the "Статистика" sheet's
+// monthly-bucket labels (formatCode "mm.yyyy").
+function ensureCustomNumFmtStyle(stylesXml, formatCode) {
+  let numFmtId;
+  const existingFmt = new RegExp(`<numFmt numFmtId="(\\d+)" formatCode="${formatCode}"/>`).exec(stylesXml);
+  if (existingFmt) {
+    numFmtId = existingFmt[1];
+  } else {
+    let maxId = 163; // custom numFmt ids start at 164; 0-163 are Excel builtins
+    const idRe = /<numFmt numFmtId="(\d+)"/g;
+    let m;
+    while ((m = idRe.exec(stylesXml))) maxId = Math.max(maxId, parseInt(m[1], 10));
+    numFmtId = String(maxId + 1);
+    const entry = `<numFmt numFmtId="${numFmtId}" formatCode="${formatCode}"/>`;
+    stylesXml = stylesXml.includes('<numFmts')
+      ? stylesXml
+          .replace(/<numFmts count="(\d+)">/, (full, count) => `<numFmts count="${parseInt(count, 10) + 1}">`)
+          .replace('</numFmts>', `${entry}</numFmts>`)
+      : stylesXml.replace(/(<styleSheet[^>]*>)/, `$1<numFmts count="1">${entry}</numFmts>`);
+  }
+
+  const cellXfsMatch = /<cellXfs count="\d+">([\s\S]*?)<\/cellXfs>/.exec(stylesXml);
+  const xfEntries = cellXfsMatch[1].match(/<xf\b[^>]*?(?:\/>|>[\s\S]*?<\/xf>)/g) || [];
+  const marker = `numFmtId="${numFmtId}"`;
+  let styleIndex = xfEntries.findIndex((xf) => xf.includes(marker) && xf.includes('fontId="0"') && xf.includes('borderId="0"'));
+
+  if (styleIndex === -1) {
+    styleIndex = xfEntries.length;
+    const newXf = `<xf numFmtId="${numFmtId}" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>`;
+    stylesXml = stylesXml
+      .replace(/<cellXfs count="(\d+)">/, (full, count) => `<cellXfs count="${parseInt(count, 10) + 1}">`)
+      .replace('</cellXfs>', `${newXf}</cellXfs>`);
+  }
+
+  return { stylesXml, styleIndex };
+}
+
 // Job postings carry their id right in the URL we already store as a
 // hyperlink — no need for a separate hidden id column to find a row again later.
 function extractJobIdFromUrl(url) {
@@ -302,6 +376,12 @@ function parseAllCells(sheetXml, sharedStrings) {
     } else if (type === 's' && content) {
       const vm = /<v>(\d+)<\/v>/.exec(content);
       text = vm ? sharedStrings[parseInt(vm[1], 10)] || '' : '';
+    } else if (type === 'n' && content) {
+      // Raw numeric literal (e.g. an Excel date serial) — readRowTexts()
+      // turns this into a display string for the Date column; every other
+      // column just gets this raw digit string as-is, same as before.
+      const vm = /<v>([\d.]+)<\/v>/.exec(content);
+      text = vm ? vm[1] : '';
     }
     cells.push({ col, row: parseInt(rowStr, 10), text });
   }
@@ -317,8 +397,15 @@ function readRowTexts(sheetXml, sharedStrings) {
   const rows = new Map();
   for (const cell of parseAllCells(sheetXml, sharedStrings)) {
     if (!/^[A-L]$/.test(cell.col)) continue;
+    let text = cell.text;
+    if (cell.col === 'A' && /^\d+(\.\d+)?$/.test(text)) {
+      // Date column stored as a real Excel date serial now (see
+      // ensureDateStyle) rather than text — convert back to the same
+      // dd.mm.yyyy display string every other consumer already expects.
+      text = excelSerialToDisplayDate(Math.round(parseFloat(text)));
+    }
     if (!rows.has(cell.row)) rows.set(cell.row, {});
-    rows.get(cell.row)[cell.col] = cell.text;
+    rows.get(cell.row)[cell.col] = text;
   }
   return rows;
 }
@@ -643,7 +730,7 @@ function readCvList() {
 // when restoring a row that had those hand-filled in before it vanished.
 // ---------------------------------------------------------------------
 
-function buildRowsForAppend(records, startRow, startRid) {
+function buildRowsForAppend(records, startRow, startRid, dateStyleIndex) {
   const rowsXml = [];
   const hyperlinkTags = [];
   const relationships = [];
@@ -651,7 +738,12 @@ function buildRowsForAppend(records, startRow, startRid) {
 
   records.forEach((rec, i) => {
     const r = startRow + i;
-    const cells = [inlineStrCell(`${COL.DATE}${r}`, rec.date || '', DATA_STYLE)];
+    const dateSerial = rec.date ? parseDisplayDateToSerial(rec.date) : null;
+    const dateCell =
+      dateSerial != null
+        ? numberCell(`${COL.DATE}${r}`, dateSerial, dateStyleIndex)
+        : inlineStrCell(`${COL.DATE}${r}`, rec.date || '', DATA_STYLE); // unparseable — fall back to plain text rather than lose the value
+    const cells = [dateCell];
 
     cells.push(inlineStrCell(`${COL.COMPANY}${r}`, rec.company || '', DATA_STYLE));
     if (rec.companyUrl) {
@@ -703,7 +795,8 @@ async function appendRecords(records) {
   const nextRow = parseMaxRowNumber(sheetXml) + 1;
   const nextRid = parseMaxRid(relsXml);
 
-  const { rowsXml, hyperlinkTags, relationships } = buildRowsForAppend(records, nextRow, nextRid);
+  const { stylesXml, styleIndex: dateStyleIndex } = ensureDateStyle(existingParts.get('xl/styles.xml').toString('utf8'));
+  const { rowsXml, hyperlinkTags, relationships } = buildRowsForAppend(records, nextRow, nextRid, dateStyleIndex);
 
   sheetXml = insertRows(sheetXml, rowsXml);
   sheetXml = insertHyperlinks(sheetXml, hyperlinkTags);
@@ -719,6 +812,8 @@ async function appendRecords(records) {
       files.push({ name, data: encoder.encode(sheetXml) });
     } else if (name === relsName) {
       continue; // handled below, in case it's newly created
+    } else if (name === 'xl/styles.xml') {
+      files.push({ name, data: encoder.encode(stylesXml) });
     } else {
       files.push({ name, data });
     }
